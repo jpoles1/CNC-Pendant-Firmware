@@ -16,7 +16,7 @@ int estop_pin = 13;
 int steps = 0;
 
 unsigned long last_update = 0; // time of last update in ms
-static int update_timeout = 250; // time to wait from last update before sending move command to host/cnc
+static int update_timeout = 100; // time to wait from last update before sending move command to host/cnc
 
 unsigned long top_left_key_last = 0;
 unsigned long bot_left_key_last = 0;
@@ -68,28 +68,23 @@ void btn_interrupt() {
 
 	if(!top_left_key) {
 		if ((millis() - top_left_key_last) > btn_debounce) {
-			cnc.inc_move_mult();
-			Serial.print("Move mult: ");
-			Serial.println(cnc.move_mult());
+			cnc.ui.handle_top_left_key();
 			Serial.println("Top Left Key Pressed");
-			cnc.draw();
 			top_left_key_last = millis();
 		}
 	}
 
 	if(!bot_left_key) {
 		if ((millis() - bot_left_key_last) > btn_debounce) {
-			cnc.dec_move_mult();
-			Serial.print("Move mult: ");
-			Serial.println(cnc.move_mult());
+			cnc.ui.handle_bot_left_key();
 			Serial.println("Bottom Left Key Pressed");
-			cnc.draw();
 			bot_left_key_last = millis();
 		}
 	}
 
 	if(!top_right_key) {
 		if ((millis() - top_right_key_last) > btn_debounce) {
+			cnc.ui.handle_top_right_key();
 			Serial.println("Top Right Key Pressed");
 			top_right_key_last = millis();
 		}
@@ -147,6 +142,9 @@ void gen_gcode(char* gcode) {
 }
 
 void handle_as_keyboard(char* gcode) {
+	if(!keyboard.isConnected()) {
+		cnc.ui.logtft.add("BLE Discon");
+	}
 	Serial.println(gcode);
 	keyboard.println("G91");
 	keyboard.println(gcode);

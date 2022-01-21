@@ -53,8 +53,17 @@ class LogTFT {
 
 class JCNC {
     class UI {
+        private:
+            char menu_opts[3][40] = {"Switch Mode", "Reset BLE", "Restart"};
+            uint menu_index = 0;
+            JCNC* cnc;
         public:
+            UI(JCNC *cncref) {
+                cnc = cncref;
+            }
+
             LogTFT logtft = LogTFT(0, 46, SCREEN_WIDTH, SCREEN_HEIGHT - 46);
+            bool settings_menu = 0;
 
             void init() {
                 tft.init();
@@ -64,6 +73,61 @@ class JCNC {
                 tft.setTextDatum(MC_DATUM);
                 tft.setFreeFont(&Font5x7FixedMono);
                 tft.setTextSize(2);
+            }
+
+            uint n_menu_opt() {
+                return sizeof(menu_opts)/sizeof(menu_opts[0]); 
+            };
+
+
+            void handle_top_left_key() {
+                if (!settings_menu) {
+                    cnc->inc_move_mult();
+                    Serial.print("Move mult: ");
+                    Serial.println(cnc->move_mult());
+                }
+                if (settings_menu) {
+                    menu_index = min(n_menu_opt() - 1, menu_index + 1); //Stay in bounds of array
+                }
+                cnc->draw();
+            }
+
+            void handle_bot_left_key() {
+                if (!settings_menu) {
+                    cnc->dec_move_mult();
+                    Serial.print("Move mult: ");
+                    Serial.println(cnc->move_mult());
+                }
+                if (settings_menu) {
+			        if (menu_index != 0) menu_index--; //Can't go lower than 0
+                }
+                cnc->draw();
+            }
+
+            void handle_top_right_key() {
+                settings_menu = !settings_menu;
+                menu_index = 0;
+                cnc->draw();
+            }
+
+            void handle_bot_right_key() {
+                
+            }
+            
+            void draw_settings_menu() {
+                tft.fillScreen(TFT_GREEN);
+                tft.setFreeFont(&FreeMonoBold9pt7b);
+                tft.setTextSize(1);
+                for(int line_n=0; line_n < n_menu_opt(); line_n++) {
+                    if (line_n == menu_index) {
+                        tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+                    } else {
+                        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                    }
+                    tft.drawString(menu_opts[line_n], 0, 6 + 11 * line_n);
+                    line_n++;
+                }
+
             }
 
             bool last_flash_phase = 0;
@@ -81,16 +145,18 @@ class JCNC {
                     }
                     tft.setFreeFont(&Font5x7FixedMono);
                     tft.setTextSize(3);
-                    tft.drawString("ESTOP", SCREEN_MIDX, SCREEN_MIDY - 25);
-                    tft.drawString("ENGAGE", SCREEN_MIDX, SCREEN_MIDY + 20);
+                    tft.drawString("JCNC", SCREEN_MIDX, SCREEN_MIDY - 25);
+                    tft.drawString("LOCKED", SCREEN_MIDX, SCREEN_MIDY + 20);
                     last_flash_phase = flash_phase;    
                 }
                 
             }
 
-            void draw(JCNC *cnc) {
+            void draw() {
                 if (cnc->estop) {
                     draw_estop();
+                } else if (settings_menu) {
+                    draw_settings_menu();    
                 } else {
                     tft.fillScreen(TFT_BLACK);
                     tft.setTextColor(TFT_WHITE);
@@ -109,7 +175,7 @@ class JCNC {
     };
 
     public: 
-        UI ui; //Create TFT UI
+        UI ui = UI(this); //Create TFT UI
         char current_axis = 'Y';
         float move_mult_opts[6] = {0.01, 0.1, 0.5, 1, 5, 10};
         uint move_mult_index = 3;
@@ -129,6 +195,6 @@ class JCNC {
         }
 
         void draw() {
-            ui.draw(this);
+            ui.draw();
         }
 };

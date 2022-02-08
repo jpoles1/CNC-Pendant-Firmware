@@ -1,5 +1,21 @@
 {
     "files.associations": {
-        "new": "cpp"
+        "new": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp",
+        "vector": "cpp",
+        "initializer_list": "cpp",
+        "regex": "cpp",
+        "valarray": "cpp",
+        "typeindex": "cpp",
+        "typeinfo": "cpp",
+        "condition_variable": "cpp",
+        "future": "cpp",
+        "ostream": "cpp"
     }
 }

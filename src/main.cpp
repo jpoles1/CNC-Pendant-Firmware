@@ -1,7 +1,5 @@
 #include <JCNC.h>
-#include <BleKeyboard.h>
-
-BleKeyboard keyboard = BleKeyboard("JCNC Pendant");
+#include <BluetoothSerial.h>
 
 int rot_pin_A = 26;
 int rot_pin_B = 25;
@@ -27,6 +25,27 @@ unsigned long estop_last = 0;
 static int btn_debounce = 250;
 
 JCNC cnc; // Init JCNC
+BluetoothSerial SerialBT;
+
+const char *pin = "4424";
+
+/*void handle_as_keyboard(char* gcode) {
+	if(!keyboard.isConnected()) {
+		cnc.ui.logtft.add("BLE Discon");
+	}
+	Serial.println(gcode);
+	keyboard.println("G91");
+	keyboard.println(gcode);
+}*/
+
+void handle_as_ble_grbl(char* gcode) {
+	/*if(!SerialBT.connected()) {
+		cnc.ui.logtft.add("BLE Discon");
+	}*/
+	SerialBT.println("G91");
+	SerialBT.println(gcode);
+
+}
 
 void rot_interrupt() {
 	//bool pin_A = digitalRead(rot_pin_A);
@@ -92,6 +111,7 @@ void btn_interrupt() {
 
 	if(!bot_right_key) {
 		if ((millis() - bot_right_key_last) > btn_debounce) {
+			handle_as_ble_grbl("$H");
 			Serial.println("Bottom Right Key Pressed");
 			bot_right_key_last = millis();
 		}
@@ -116,6 +136,30 @@ void setup() {
 	cnc.ui.init();
 	cnc.draw();
 
+	//remove_paired();
+
+	//Start BLE Serial
+	if(!SerialBT.begin("JCNC Pendant", true)) {
+		Serial.println("An error occurred initializing Bluetooth");
+		cnc.ui.logtft.add("BLE INIT ERR");
+	};
+	cnc.ui.logtft.add("BLE START");
+	//SerialBT.enableSSP();
+	SerialBT.setPin(pin);
+	//bool connected = SerialBT.connect("JCNC");
+	uint8_t bt_address[6]  = {0x00, 0x18, 0xE4, 0x40, 0x00, 0x06};
+	bool connected = SerialBT.connect(bt_address);
+
+	if(connected) {
+		cnc.ui.logtft.add("BLE CONNECT");
+		Serial.println("Connected Succesfully!");
+	} else {
+		while(!SerialBT.connected(15000)) {
+			cnc.ui.logtft.add("BLE CONN ERR");
+			Serial.println("Failed to connect. Make sure remote device is available and in range, then restart app."); 
+		}
+	}
+
 	//Start rotary encoder
 	attachInterrupt(rot_pin_A, rot_interrupt, RISING);
 	//attachInterrupt(rot_pin_B, rot_interrupt, RISING);
@@ -133,21 +177,10 @@ void setup() {
 
 	attachInterrupt(estop_pin, estop_interrupt, CHANGE);
 	estop_interrupt();
-
-	keyboard.begin();
 }
 
 void gen_gcode(char* gcode) {
 	snprintf(gcode, 100, "G0 %c%.2f", cnc.current_axis, steps * cnc.move_mult());
-}
-
-void handle_as_keyboard(char* gcode) {
-	if(!keyboard.isConnected()) {
-		cnc.ui.logtft.add("BLE Discon");
-	}
-	Serial.println(gcode);
-	keyboard.println("G91");
-	keyboard.println(gcode);
 }
 
 void loop() {
@@ -156,13 +189,16 @@ void loop() {
 		steps = 0;
 	} 
 	else if( (millis() - last_update) > update_timeout ) {
+		while (SerialBT.available()) {
+			Serial.write(SerialBT.read());
+		}
 		if (steps != 0) {
 			//switch_interrupt();
 			char gcode[100];
 			gen_gcode(gcode);
 			Serial.println(gcode);
 			cnc.ui.logtft.add(gcode);
-			handle_as_keyboard(gcode);
+			handle_as_ble_grbl(gcode);
 			steps = 0;
 		}
 		last_update = millis(); // reset timer

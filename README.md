@@ -16,3 +16,4 @@ The pendant has two modes:
 4) If using the bCNC WiFi mode, make sure the pendant server is up and running
 5) CNC your heart out!
 
+![PXL_20240224_112546104 PORTRAIT](https://github.com/jpoles1/CNC-Pendant-Firmware/assets/366282/92ae019e-60ec-45db-93a3-b2948c822b9a)

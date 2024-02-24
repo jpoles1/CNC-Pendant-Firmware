@@ -1,7 +1,21 @@
 #include <JCNC.h>
-//#include <BluetoothSerial.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
+
+#define BT_MODE 0
+#define WIFI_MODE 1
+
+#define CONMODE WIFI_MODE
+
+#if CONMODE == BT_MODE
+	#include <BluetoothSerial.h>
+	BluetoothSerial SerialBT;
+#endif
+
+#if CONMODE == WIFI_MODE
+	#include <WiFi.h>
+	#include <HTTPClient.h>
+	HTTPClient http;
+#endif
+
 #include <ESP32Encoder.h>
 #include "secrets.h"
 
@@ -35,7 +49,6 @@ static int btn_debounce = 250;
 
 JCNC cnc; // Init JCNC
 ESP32Encoder dial;
-HTTPClient http;
 
 uint8_t bt_address[6]  = {0x00, 0x18, 0xE4, 0x40, 0x00, 0x06};
 const char *bt_pin = "4424";
@@ -57,29 +70,89 @@ float read_batt_voltage() {
 	return battery_voltage;
 }
 
-void handle_as_ble_grbl(char* gcode) {
-	/*if(!SerialBT.connected()) {
-		cnc.ui.logtft.add("BLE Discon");
-	}*/
-	//SerialBT.println(gcode);
-	http.begin("http://192.168.40.167:8080/send?gcode=" + String(gcode)); //HTTP
-	int httpCode = http.GET();
-	if (httpCode > 0) {
-		// file found at server
-		if (httpCode == HTTP_CODE_OK) {
-			String payload = http.getString();
-			Serial.println(payload);
+#if CONMODE == WIFI_MODE
+	void send_grbl(char* gcode) {
+		http.begin("http://192.168.40.167:8080/send?gcode=" + String(gcode)); //HTTP
+		int httpCode = http.GET();
+		if (httpCode > 0) {
+			// file found at server
+			if (httpCode == HTTP_CODE_OK) {
+				String payload = http.getString();
+				Serial.println(payload);
+			} else {
+				// HTTP header has been send and Server response header has been handled
+				Serial.printf("[HTTP] GET/POST... code: %d\n", httpCode);
+			}
 		} else {
-			// HTTP header has been send and Server response header has been handled
-			Serial.printf("[HTTP] GET/POST... code: %d\n", httpCode);
+			Serial.printf("[HTTP] GET/POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+			cnc.ui.logtft.add("HTTP ERR");
 		}
-	} else {
-		Serial.printf("[HTTP] GET/POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
-		cnc.ui.logtft.add("HTTP ERR");
+		http.end();
 	}
+	void conn_watchdog(void * params) {
+		bool last_conn_state = 0;
+		for(;;) {
+			bool connected = WiFi.status() == WL_CONNECTED;
+			Serial.print("CONN STATUS: ");
+			Serial.println(connected);
+			if(!connected) {
+				if(last_conn_state){
+					cnc.ui.logtft.add("WiFi DCONN");
+					last_conn_state = 0;
+				}
+				WiFi.disconnect(true);
+				WiFi.mode(WIFI_STA);
+				WiFi.begin(WIFI_SSID, WIFI_PSK);
+				bool connnect_attept = WiFi.status() == WL_CONNECTED;
+				if(connnect_attept) {
+					cnc.ui.logtft.add("WiFi CONN");
+					Serial.println("Connected Succesfully!");
+					last_conn_state = 1;
+				} else {
+					cnc.ui.logtft.add("WiFi ERR");
+					Serial.println("Failed to connect!");
+				}
+			}
+			vTaskDelay(2.5 * 1000 / portTICK_PERIOD_MS);
+		}
+	}
+#endif
 
-	http.end();
-}
+#if CONMODE == BT_MODE
+	void send_grbl(char* gcode) {
+		/*if(!SerialBT.connected()) {
+			cnc.ui.logtft.add("BLE Discon");
+		}*/
+		SerialBT.println("G91");
+		SerialBT.println(gcode);
+	}
+	void conn_watchdog(void * params) {
+		bool last_conn_state = 0;
+		for(;;) {
+			bool connected = SerialBT.connected(1000);
+			/*Serial.print("CONN STATUS: ");
+			Serial.println(connected);*/
+			if(!connected) {
+				if(last_conn_state){
+					cnc.ui.logtft.add("BT DISCONN");
+					last_conn_state = 0;
+				}
+				SerialBT.disconnect();
+				SerialBT.connect(bt_address);
+				bool connnect_attept = SerialBT.connected(10000);
+				if(connnect_attept) {
+					cnc.ui.logtft.add("BT CONN");
+					Serial.println("Connected Succesfully!");
+					last_conn_state = 1;
+				} else {
+					cnc.ui.logtft.add("BT CONN ERR");
+					Serial.println("Failed to connect!");
+				}
+			}
+			vTaskDelay(2.5 * 1000 / portTICK_PERIOD_MS);
+		}
+	}
+#endif
 
 void switch_interrupt() {
 	bool pin_A = digitalRead(switch_pin_A);
@@ -135,38 +208,10 @@ void btn_interrupt() {
 
 	if(!bot_right_key) {
 		if ((millis() - bot_right_key_last) > btn_debounce) {
-			handle_as_ble_grbl("$H");
+			send_grbl("$H");
 			Serial.println("Bottom Right Key Pressed");
 			bot_right_key_last = millis();
 		}
-	}
-}
-
-void wifi_watchdog(void * params) {
-	bool last_conn_state = 0;
-	for(;;) {
-		bool connected = WiFi.status() == WL_CONNECTED;
-		Serial.print("CONN STATUS: ");
-		Serial.println(connected);
-		if(!connected) {
-			if(last_conn_state){
-				cnc.ui.logtft.add("WiFi DCONN");
-				last_conn_state = 0;
-			}
-			WiFi.disconnect(true);
-			WiFi.mode(WIFI_STA);
-    		WiFi.begin(WIFI_SSID, WIFI_PSK);
-			bool connnect_attept = WiFi.status() == WL_CONNECTED;
-			if(connnect_attept) {
-				cnc.ui.logtft.add("WiFi CONN");
-				Serial.println("Connected Succesfully!");
-				last_conn_state = 1;
-			} else {
-				cnc.ui.logtft.add("WiFi ERR");
-				Serial.println("Failed to connect!");
-			}
-		}
-		vTaskDelay(2.5 * 1000 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -196,14 +241,11 @@ void setup() {
 	cnc.ui.init();
 	cnc.draw();
 
-	//remove_paired();
+	//Wakeup from sleep if ESTOP pin goes to 0
 	esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 0); //1 = High, 0 = Low
-	
-	WiFi.disconnect(true);
-	WiFi.mode(WIFI_STA);
-	WiFi.begin(WIFI_SSID, WIFI_PSK);
-	//xTaskCreate(bt_watchdog, "bt_watchdog", 10000, NULL, 1, NULL);
-	xTaskCreate(wifi_watchdog, "wifi_watchdog", 10000, NULL, 1, NULL);
+
+	//Start BT/WiFi monitoring task
+	xTaskCreate(conn_watchdog, "conn_watchdog", 10000, NULL, 1, NULL);
 	
 	//Start rot switch
 	attachInterrupt(switch_pin_A, switch_interrupt, CHANGE);
@@ -243,7 +285,7 @@ void loop() {
 			gen_gcode(gcode, steps);
 			Serial.println(gcode);
 			cnc.ui.logtft.add(gcode);
-			handle_as_ble_grbl(gcode);
+			send_grbl(gcode);
 			last_user_input = millis();
 		}
 		Serial.println(read_batt_voltage());

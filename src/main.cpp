@@ -3,6 +3,10 @@
 #define BT_MODE 0
 #define WIFI_MODE 1
 
+//Use either BT_MODE or WIFI_MODE depending on desired connectivity
+//BT_MODE: Use Bluetooth to connect to a CNC machine which has a HC-05 or similar bluetooth module which forwards GCODE commands to the machine via serial
+//WIFI_MODE: Use WiFi to connect to a bCNC pendant server (https://github.com/vlachoudis/bCNC/wiki/Pendant)
+
 #define CONMODE WIFI_MODE
 
 #if CONMODE == BT_MODE
@@ -50,10 +54,6 @@ static int btn_debounce = 250;
 JCNC cnc; // Init JCNC
 ESP32Encoder dial;
 
-uint8_t bt_address[6]  = {0x00, 0x18, 0xE4, 0x40, 0x00, 0x06};
-const char *bt_pin = "4424";
-
-
 /*void handle_as_keyboard(char* gcode) {
 	if(!keyboard.isConnected()) {
 		cnc.ui.logtft.add("BLE Discon");
@@ -72,7 +72,7 @@ float read_batt_voltage() {
 
 #if CONMODE == WIFI_MODE
 	void send_grbl(char* gcode) {
-		http.begin("http://192.168.40.167:8080/send?gcode=" + String(gcode)); //HTTP
+		http.begin("http://" + String(PENDANT_IP) + ":8080/send?gcode=" + String(gcode)); //HTTP
 		int httpCode = http.GET();
 		if (httpCode > 0) {
 			// file found at server
@@ -113,7 +113,7 @@ float read_batt_voltage() {
 					Serial.println("Failed to connect!");
 				}
 			}
-			vTaskDelay(2.5 * 1000 / portTICK_PERIOD_MS);
+			vTaskDelay(15 * 1000 / portTICK_PERIOD_MS);
 		}
 	}
 #endif
@@ -138,7 +138,7 @@ float read_batt_voltage() {
 					last_conn_state = 0;
 				}
 				SerialBT.disconnect();
-				SerialBT.connect(bt_address);
+				SerialBT.connect(BT_ADDRESS);
 				bool connnect_attept = SerialBT.connected(10000);
 				if(connnect_attept) {
 					cnc.ui.logtft.add("BT CONN");
@@ -149,7 +149,7 @@ float read_batt_voltage() {
 					Serial.println("Failed to connect!");
 				}
 			}
-			vTaskDelay(2.5 * 1000 / portTICK_PERIOD_MS);
+			vTaskDelay(15 * 1000 / portTICK_PERIOD_MS);
 		}
 	}
 #endif

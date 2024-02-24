@@ -19,6 +19,9 @@ int steps = 0;
 unsigned long last_update = 0; // time of last update in ms
 static int update_timeout = 250; // time to wait from last update before sending move command to host/cnc
 
+unsigned long last_user_input = millis();
+static int sleep_timeout = 15 * 1000; // time to wait from last update before sending move command to host/cnc
+
 unsigned long top_left_key_last = 0;
 unsigned long bot_left_key_last = 0;
 unsigned long top_right_key_last = 0;
@@ -48,6 +51,7 @@ float read_batt_voltage() {
 	const int vref = 1100;
 	uint16_t v = analogRead(batt_adc_pin);
 	float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+	return battery_voltage;
 }
 
 void handle_as_ble_grbl(char* gcode) {
@@ -73,6 +77,7 @@ void switch_interrupt() {
 
 void estop_interrupt() {
 	cnc.estop = digitalRead(estop_pin);
+	last_user_input = millis();
 	Serial.print("Estop change: ");
 	Serial.println(cnc.estop);
 	steps = 0;
@@ -183,6 +188,8 @@ void setup() {
 	SerialBT.setPin(bt_pin);
 	
 	xTaskCreate(bt_watchdog, "bt_watchdog", 10000, NULL, 1, NULL);
+
+	esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 0); //1 = High, 0 = Low
 	
 	//Start rot switch
 	attachInterrupt(switch_pin_A, switch_interrupt, CHANGE);
@@ -203,10 +210,15 @@ void gen_gcode(char* gcode, float steps) {
 	snprintf(gcode, 100, "G0 %c%.2f", cnc.current_axis, steps * cnc.move_mult());
 }
 
+
+
 void loop() {
 	if( cnc.estop ) {
 		cnc.draw();
 		dial.clearCount();
+		if(millis() - last_user_input > sleep_timeout) {
+			esp_deep_sleep_start();
+		}
 	} 
 	else if( (millis() - last_update) > update_timeout ) {
 		while (SerialBT.available()) {
@@ -221,7 +233,9 @@ void loop() {
 			Serial.println(gcode);
 			cnc.ui.logtft.add(gcode);
 			handle_as_ble_grbl(gcode);
+			last_user_input = millis();
 		}
+		Serial.println(read_batt_voltage());
 		last_update = millis(); // reset timer
 	}
 	delay(50);

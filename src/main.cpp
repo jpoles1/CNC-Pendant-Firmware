@@ -1,6 +1,9 @@
 #include <JCNC.h>
-#include <BluetoothSerial.h>
+//#include <BluetoothSerial.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include <ESP32Encoder.h>
+#include "secrets.h"
 
 int dial_pin_A = 26;
 int dial_pin_B = 25;
@@ -17,7 +20,7 @@ int batt_adc_pin = 34;
 int steps = 0;
 
 unsigned long last_update = 0; // time of last update in ms
-static int update_timeout = 250; // time to wait from last update before sending move command to host/cnc
+static int update_timeout = 500; // time to wait from last update before sending move command to host/cnc
 
 unsigned long last_user_input = millis();
 static int sleep_timeout = 15 * 1000; // time to wait from last update before sending move command to host/cnc
@@ -31,8 +34,8 @@ unsigned long estop_last = 0;
 static int btn_debounce = 250;
 
 JCNC cnc; // Init JCNC
-BluetoothSerial SerialBT;
 ESP32Encoder dial;
+HTTPClient http;
 
 uint8_t bt_address[6]  = {0x00, 0x18, 0xE4, 0x40, 0x00, 0x06};
 const char *bt_pin = "4424";
@@ -58,8 +61,24 @@ void handle_as_ble_grbl(char* gcode) {
 	/*if(!SerialBT.connected()) {
 		cnc.ui.logtft.add("BLE Discon");
 	}*/
-	SerialBT.println("G91");
-	SerialBT.println(gcode);
+	//SerialBT.println(gcode);
+	http.begin("http://192.168.40.167:8080/send?gcode=" + String(gcode)); //HTTP
+	int httpCode = http.GET();
+	if (httpCode > 0) {
+		// file found at server
+		if (httpCode == HTTP_CODE_OK) {
+			String payload = http.getString();
+			Serial.println(payload);
+		} else {
+			// HTTP header has been send and Server response header has been handled
+			Serial.printf("[HTTP] GET/POST... code: %d\n", httpCode);
+		}
+	} else {
+		Serial.printf("[HTTP] GET/POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+		cnc.ui.logtft.add("HTTP ERR");
+	}
+
+	http.end();
 }
 
 void switch_interrupt() {
@@ -123,26 +142,27 @@ void btn_interrupt() {
 	}
 }
 
-void bt_watchdog(void * params) {
+void wifi_watchdog(void * params) {
 	bool last_conn_state = 0;
 	for(;;) {
-		bool connected = SerialBT.connected(1000);
-		/*Serial.print("CONN STATUS: ");
-		Serial.println(connected);*/
+		bool connected = WiFi.status() == WL_CONNECTED;
+		Serial.print("CONN STATUS: ");
+		Serial.println(connected);
 		if(!connected) {
 			if(last_conn_state){
-				cnc.ui.logtft.add("BT DISCONN");
+				cnc.ui.logtft.add("WiFi DCONN");
 				last_conn_state = 0;
 			}
-			SerialBT.disconnect();
-			SerialBT.connect(bt_address);
-			bool connnect_attept = SerialBT.connected(10000);
+			WiFi.disconnect(true);
+			WiFi.mode(WIFI_STA);
+    		WiFi.begin(WIFI_SSID, WIFI_PSK);
+			bool connnect_attept = WiFi.status() == WL_CONNECTED;
 			if(connnect_attept) {
-				cnc.ui.logtft.add("BT CONN");
+				cnc.ui.logtft.add("WiFi CONN");
 				Serial.println("Connected Succesfully!");
 				last_conn_state = 1;
 			} else {
-				cnc.ui.logtft.add("BT CONN ERR");
+				cnc.ui.logtft.add("WiFi ERR");
 				Serial.println("Failed to connect!");
 			}
 		}
@@ -177,19 +197,13 @@ void setup() {
 	cnc.draw();
 
 	//remove_paired();
-
-	//Start BLE Serial
-	if(!SerialBT.begin("JCNC Pendant", true)) {
-		Serial.println("An error occurred initializing Bluetooth");
-		cnc.ui.logtft.add("BT INIT ERR");
-	};
-	cnc.ui.logtft.add("BT START");
-	
-	SerialBT.setPin(bt_pin);
-	
-	xTaskCreate(bt_watchdog, "bt_watchdog", 10000, NULL, 1, NULL);
-
 	esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 0); //1 = High, 0 = Low
+	
+	WiFi.disconnect(true);
+	WiFi.mode(WIFI_STA);
+	WiFi.begin(WIFI_SSID, WIFI_PSK);
+	//xTaskCreate(bt_watchdog, "bt_watchdog", 10000, NULL, 1, NULL);
+	xTaskCreate(wifi_watchdog, "wifi_watchdog", 10000, NULL, 1, NULL);
 	
 	//Start rot switch
 	attachInterrupt(switch_pin_A, switch_interrupt, CHANGE);
@@ -207,7 +221,7 @@ void setup() {
 }
 
 void gen_gcode(char* gcode, float steps) {
-	snprintf(gcode, 100, "G0 %c%.2f", cnc.current_axis, steps * cnc.move_mult());
+	snprintf(gcode, 100, "G91G0%c%.2f", cnc.current_axis, steps * cnc.move_mult());
 }
 
 
@@ -221,9 +235,6 @@ void loop() {
 		}
 	} 
 	else if( (millis() - last_update) > update_timeout ) {
-		while (SerialBT.available()) {
-			Serial.write(SerialBT.read());
-		}
 		int steps = dial.getCount();
 		dial.clearCount();
 		if (steps != 0) {

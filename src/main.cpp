@@ -71,8 +71,9 @@ float read_batt_voltage() {
 }
 
 #if CONMODE == WIFI_MODE
-	void send_grbl(char* gcode) {
-		http.begin("http://" + String(PENDANT_IP) + ":8080/send?gcode=" + String(gcode)); //HTTP
+	// bCNC receives GCODE commands via HTTP GET requests with the url param "gcode" but can receive other commands like STOP via the url param "cmd"
+	void send_grbl(char* gcode, char* url_param_name="gcode") {
+		http.begin("http://" + String(PENDANT_IP) + ":8080/send?" + String(url_param_name) + "=" + String(gcode)); //HTTP
 		int httpCode = http.GET();
 		if (httpCode > 0) {
 			// file found at server
@@ -269,13 +270,16 @@ void gen_gcode(char* gcode, float steps) {
 
 
 void loop() {
-	if( cnc.estop ) {
+	if( cnc.estop) {
+		if (estop_last == 0) {
+			send_grbl("STOP", "cmd");
+		}
 		cnc.draw();
 		dial.clearCount();
 		if(millis() - last_user_input > sleep_timeout) {
 			esp_deep_sleep_start();
 		}
-	} 
+	}
 	else if( (millis() - last_update) > update_timeout ) {
 		int steps = dial.getCount();
 		dial.clearCount();
@@ -288,8 +292,9 @@ void loop() {
 			send_grbl(gcode);
 			last_user_input = millis();
 		}
-		Serial.println(read_batt_voltage());
+		//Serial.println(read_batt_voltage());
 		last_update = millis(); // reset timer
 	}
+	estop_last = cnc.estop;
 	delay(50);
 }

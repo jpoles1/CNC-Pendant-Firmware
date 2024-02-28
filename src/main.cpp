@@ -157,8 +157,8 @@ float read_batt_voltage() {
 void switch_interrupt() {
 	bool pin_A = digitalRead(switch_pin_A);
 	bool pin_B = digitalRead(switch_pin_B);
-	Serial.println(pin_A);
-	Serial.println(pin_B);
+	//Serial.println(pin_A);
+	//Serial.println(pin_B);
 	if (pin_A && pin_B) cnc.current_axis = 'Y';
 	else if (pin_A) cnc.current_axis = 'X';
 	else if (pin_B) cnc.current_axis = 'Z';
@@ -170,8 +170,8 @@ void switch_interrupt() {
 void estop_interrupt() {
 	cnc.estop = digitalRead(estop_pin);
 	last_user_input = millis();
-	Serial.print("Estop change: ");
-	Serial.println(cnc.estop);
+	//Serial.print("Estop change: ");
+	//Serial.println(cnc.estop);
 	steps = 0;
 	cnc.draw();
 }
@@ -185,7 +185,7 @@ void btn_interrupt() {
 	if(!top_left_key) {
 		if ((millis() - top_left_key_last) > btn_debounce) {
 			cnc.ui.handle_top_left_key();
-			Serial.println("Top Left Key Pressed");
+			//Serial.println("Top Left Key Pressed");
 			top_left_key_last = millis();
 		}
 	}
@@ -193,7 +193,7 @@ void btn_interrupt() {
 	if(!bot_left_key) {
 		if ((millis() - bot_left_key_last) > btn_debounce) {
 			cnc.ui.handle_bot_left_key();
-			Serial.println("Bottom Left Key Pressed");
+			//Serial.println("Bottom Left Key Pressed");
 			bot_left_key_last = millis();
 		}
 	}
@@ -201,7 +201,7 @@ void btn_interrupt() {
 	if(!top_right_key) {
 		if ((millis() - top_right_key_last) > btn_debounce) {
 			cnc.ui.handle_top_right_key();
-			Serial.println("Top Right Key Pressed");
+			//Serial.println("Top Right Key Pressed");
 			top_right_key_last = millis();
 		}
 	}
@@ -209,7 +209,7 @@ void btn_interrupt() {
 	if(!bot_right_key) {
 		if ((millis() - bot_right_key_last) > btn_debounce) {
 			send_grbl("$H");
-			Serial.println("Bottom Right Key Pressed");
+			//Serial.println("Bottom Right Key Pressed");
 			bot_right_key_last = millis();
 		}
 	}
